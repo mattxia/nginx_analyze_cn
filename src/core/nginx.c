@@ -28,7 +28,7 @@ static ngx_conf_enum_t  ngx_debug_points[] = {
     { ngx_null_string, 0 }
 };
 
-
+//静态初始化core 模块
 static ngx_command_t  ngx_core_commands[] = {
 
     { ngx_string("daemon"),
@@ -157,7 +157,7 @@ static ngx_command_t  ngx_core_commands[] = {
       ngx_null_command
 };
 
-
+//定义ngx_core_module上下文,静态初始化
 static ngx_core_module_t  ngx_core_module_ctx = {
     ngx_string("core"),
     ngx_core_module_create_conf,
@@ -165,7 +165,7 @@ static ngx_core_module_t  ngx_core_module_ctx = {
 };
 
 
-ngx_module_t  ngx_core_module = {
+ngx_module_t  ngx_core_module = {			//定义ngx_core_module模块,静态初始化
     NGX_MODULE_V1,
     &ngx_core_module_ctx,                  /* module context */
     ngx_core_commands,                     /* module directives */
@@ -326,6 +326,13 @@ main(int argc, char *const *argv)
         return 1;
     }
 
+/*
+"	调用ngx_add_inherited_sockets()继承sockets；
+o	解析环境变量NGINX_VAR="NGINX"中的sockets，并保存至ngx_cycle.listening数组；
+o	设置ngx_inherited=1；
+o	调用ngx_set_inherited_sockets()逐一对ngx_cycle.listening数组中的sockets进行设置
+
+*/
     if (ngx_add_inherited_sockets(&init_cycle) != NGX_OK) {
         return 1;
     }
@@ -335,7 +342,7 @@ main(int argc, char *const *argv)
     for (i = 0; ngx_modules[i]; i++) {
         ngx_modules[i]->index = ngx_max_module++;
     }
-
+//o	该初始化主要对ngx_cycle结构进行
     cycle = ngx_init_cycle(&init_cycle);
     if (cycle == NULL) {
         if (ngx_test_config) {
@@ -354,7 +361,7 @@ main(int argc, char *const *argv)
 
         return 0;
     }
-
+//"	若有信号，则进入ngx_signal_process()处理
     if (ngx_signal) {
         return ngx_signal_process(cycle, ngx_signal);
     }
@@ -370,11 +377,12 @@ main(int argc, char *const *argv)
     }
 
 #if !(NGX_WIN32)
-
+	//主要完成信号处理程序的注册
     if (ngx_init_signals(cycle->log) != NGX_OK) {
         return 1;
     }
 
+//"	若无继承sockets，且设置了守护进程标识，则调用ngx_daemon()创建守护进程
     if (!ngx_inherited && ccf->daemon) {
         if (ngx_daemon(cycle->log) != NGX_OK) {
             return 1;
@@ -384,11 +392,11 @@ main(int argc, char *const *argv)
     }
 
 #endif
-
+	//"	调用ngx_create_pidfile()创建进程记录文件
     if (ngx_create_pidfile(&ccf->pid, cycle->log) != NGX_OK) {
         return 1;
     }
-
+	//log file is OK
     if (cycle->log->file->fd != ngx_stderr) {
 
         if (ngx_set_stderr(cycle->log->file->fd) == NGX_FILE_ERROR) {
@@ -407,11 +415,12 @@ main(int argc, char *const *argv)
 
     ngx_use_stderr = 0;
 
+	//进入进程主循环
     if (ngx_process == NGX_PROCESS_SINGLE) {
-        ngx_single_process_cycle(cycle);
+        ngx_single_process_cycle(cycle);	//单进程模式
 
     } else {
-        ngx_master_process_cycle(cycle);
+        ngx_master_process_cycle(cycle);	//master-slave模式
     }
 
     return 0;
@@ -422,8 +431,6 @@ main(int argc, char *const *argv)
 解析环境变量NGINX_VAR="NGINX"中的sockets，并保存至ngx_cycle.listening数组；
 设置ngx_inherited=1；
 调用ngx_set_inherited_sockets()逐一对ngx_cycle.listening数组中的sockets进行设置；
-具体可参考<nginx源码分析—初始化过程中处理继承的sockets>
-*
 *
 */
 static ngx_int_t

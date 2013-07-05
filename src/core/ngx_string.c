@@ -13,7 +13,7 @@ static u_char *ngx_sprintf_num(u_char *buf, u_char *last, uint64_t ui64,
 static ngx_int_t ngx_decode_base64_internal(ngx_str_t *dst, ngx_str_t *src,
     const u_char *basis);
 
-
+//将源字符串转成小写并写入到目标字符串当中
 void
 ngx_strlow(u_char *dst, u_char *src, size_t n)
 {

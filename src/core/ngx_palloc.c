@@ -11,18 +11,20 @@
 static void *ngx_palloc_block(ngx_pool_t *pool, size_t size);
 static void *ngx_palloc_large(ngx_pool_t *pool, size_t size);
 
-
+//创建内存池
 ngx_pool_t *
 ngx_create_pool(size_t size, ngx_log_t *log)
 {
     ngx_pool_t  *p;
 
+//16
     p = ngx_memalign(NGX_POOL_ALIGNMENT, size, log);
     if (p == NULL) {
         return NULL;
     }
-
+//last指向ngx_pool_t结构体之后数据取起始位
     p->d.last = (u_char *) p + sizeof(ngx_pool_t);
+//end指向分配的整个size大小的内存的末尾
     p->d.end = (u_char *) p + size;
     p->d.next = NULL;
     p->d.failed = 0;
@@ -97,7 +99,7 @@ ngx_reset_pool(ngx_pool_t *pool)
 {
     ngx_pool_t        *p;
     ngx_pool_large_t  *l;
-
+//先逐个释放分配的内存
     for (l = pool->large; l; l = l->next) {
         if (l->alloc) {
             ngx_free(l->alloc);
@@ -111,21 +113,25 @@ ngx_reset_pool(ngx_pool_t *pool)
     }
 }
 
-
+//在内存池上分配一个大小为size的内存
 void *
 ngx_palloc(ngx_pool_t *pool, size_t size)
 {
     u_char      *m;
     ngx_pool_t  *p;
 
+//小于max值
     if (size <= pool->max) {
 
         p = pool->current;
-
+//遍历pool链表
         do {
+			//从d.last+NGX_ALIGNMENT的起始点
             m = ngx_align_ptr(p->d.last, NGX_ALIGNMENT);
 
+			//如果d.end-m>size,表示可以在某个内存块上分配空间
             if ((size_t) (p->d.end - m) >= size) {
+				//在当前的内存块上分配，并将last地址变更
                 p->d.last = m + size;
 
                 return m;
@@ -134,7 +140,7 @@ ngx_palloc(ngx_pool_t *pool, size_t size)
             p = p->d.next;
 
         } while (p);
-
+//如果所有的内存块上都没法分配，则重新分配一个内存块
         return ngx_palloc_block(pool, size);
     }
 
@@ -178,9 +184,10 @@ ngx_palloc_block(ngx_pool_t *pool, size_t size)
     u_char      *m;
     size_t       psize;
     ngx_pool_t  *p, *new, *current;
-
+//分配d.end-pool头那么大的内存块??为什么这样?
     psize = (size_t) (pool->d.end - (u_char *) pool);
 
+//分配内存块大小与psize相同
     m = ngx_memalign(NGX_POOL_ALIGNMENT, psize, pool->log);
     if (m == NULL) {
         return NULL;
@@ -188,30 +195,33 @@ ngx_palloc_block(ngx_pool_t *pool, size_t size)
 
     new = (ngx_pool_t *) m;
 
-    new->d.end = m + psize;
+    new->d.end = m + psize;	//设置end指针
     new->d.next = NULL;
     new->d.failed = 0;
 
-    m += sizeof(ngx_pool_data_t);
-    m = ngx_align_ptr(m, NGX_ALIGNMENT);
-    new->d.last = m + size;
+    m += sizeof(ngx_pool_data_t);	//让m指向该块内存ngx_pool_data_t之后的起始位置
+    m = ngx_align_ptr(m, NGX_ALIGNMENT);	//按4字节对齐
+//现有内存块都没法分配时，则新建内存块，且last指针指向分配完的内存块
+//地址，因为这里的任务是要分配一块内存
+    new->d.last = m + size;		//在数据区分配size大小的内存，并设置last指针
 
     current = pool->current;
 
+//由于刚刚在pool上没有分配到合适的内存，那么pool上所有的数据块都fail了一次
     for (p = current; p->d.next; p = p->d.next) {
-        if (p->d.failed++ > 4) {
-            current = p->d.next;
+        if (p->d.failed++ > 4) {	//failed的值只在此处修改，刚刚在failed上面分配失败过，所以才进入这里
+            current = p->d.next;	//失败4次以上，则移动current指针
         }
     }
 
-    p->d.next = new;
-
+    p->d.next = new;	//将这次分配的内存块new加入到内存池当中
+//如果全部失败了4次，则current到新分配的内存块上
     pool->current = current ? current : new;
 
     return m;
 }
 
-
+//分配大块内存
 static void *
 ngx_palloc_large(ngx_pool_t *pool, size_t size)
 {
@@ -226,23 +236,26 @@ ngx_palloc_large(ngx_pool_t *pool, size_t size)
 
     n = 0;
 
+//大内存是即用即分配? 用完以后管理的结构体还保留用于复用
     for (large = pool->large; large; large = large->next) {
         if (large->alloc == NULL) {
             large->alloc = p;
             return p;
         }
-
+//检查不超过3个?为什么?效率?
         if (n++ > 3) {
             break;
         }
     }
-
+//分配一个结构体用来保存新的large内存块
     large = ngx_palloc(pool, sizeof(ngx_pool_large_t));
+//如果分配失败，则大内存块也释放
     if (large == NULL) {
         ngx_free(p);
         return NULL;
     }
 
+//放在pool的链表的第一个
     large->alloc = p;
     large->next = pool->large;
     pool->large = large;
@@ -276,6 +289,7 @@ ngx_pmemalign(ngx_pool_t *pool, size_t size, size_t alignment)
 }
 
 
+//只释放large内存，普通内存在ngx_destroy_pool当中释放
 ngx_int_t
 ngx_pfree(ngx_pool_t *pool, void *p)
 {
@@ -285,7 +299,9 @@ ngx_pfree(ngx_pool_t *pool, void *p)
         if (p == l->alloc) {
             ngx_log_debug1(NGX_LOG_DEBUG_ALLOC, pool->log, 0,
                            "free: %p", l->alloc);
+			//释放内存块
             ngx_free(l->alloc);
+			//置为null
             l->alloc = NULL;
 
             return NGX_OK;
@@ -309,18 +325,20 @@ ngx_pcalloc(ngx_pool_t *pool, size_t size)
     return p;
 }
 
-
+//注册cleanup
 ngx_pool_cleanup_t *
 ngx_pool_cleanup_add(ngx_pool_t *p, size_t size)
 {
     ngx_pool_cleanup_t  *c;
 
+//分配一个cleanup结构体,用于管理这个cleanup的内存
     c = ngx_palloc(p, sizeof(ngx_pool_cleanup_t));
     if (c == NULL) {
         return NULL;
     }
 
     if (size) {
+		//为什么注册cleanup，还要有size??
         c->data = ngx_palloc(p, size);
         if (c->data == NULL) {
             return NULL;
@@ -329,7 +347,7 @@ ngx_pool_cleanup_add(ngx_pool_t *p, size_t size)
     } else {
         c->data = NULL;
     }
-
+//加载cleanup链表的链首
     c->handler = NULL;
     c->next = p->cleanup;
 

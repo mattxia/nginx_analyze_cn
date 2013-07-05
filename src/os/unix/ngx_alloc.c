@@ -12,7 +12,7 @@ ngx_uint_t  ngx_pagesize;
 ngx_uint_t  ngx_pagesize_shift;
 ngx_uint_t  ngx_cacheline_size;
 
-
+//封装malloc分配内存
 void *
 ngx_alloc(size_t size, ngx_log_t *log)
 {
@@ -29,7 +29,7 @@ ngx_alloc(size_t size, ngx_log_t *log)
     return p;
 }
 
-
+//封装malloc分配内存，并初始化空间内容为0
 void *
 ngx_calloc(size_t size, ngx_log_t *log)
 {
@@ -47,6 +47,8 @@ ngx_calloc(size_t size, ngx_log_t *log)
 
 #if (NGX_HAVE_POSIX_MEMALIGN)
 
+//返回基于一个指定alignment的大小为size的内存空间
+//，且其地址为alignment的整数倍，alignment为2的幂
 void *
 ngx_memalign(size_t alignment, size_t size, ngx_log_t *log)
 {

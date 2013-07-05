@@ -27,7 +27,7 @@ ngx_os_io_t ngx_os_io = {
     0
 };
 
-
+/** 该函数为glibc的库函数，由系统调用实现，返回内核中的PAGE_SIZE，该值依赖体系结构*/
 ngx_int_t
 ngx_os_init(ngx_log_t *log)
 {
@@ -41,9 +41,12 @@ ngx_os_init(ngx_log_t *log)
 
     ngx_init_setproctitle(log);
 
+	/** 该函数为glibc的库函数，由系统调用实现，返回内核中的PAGE_SIZE，该值依赖体系结构*/
+
     ngx_pagesize = getpagesize();
     ngx_cacheline_size = NGX_CPU_CACHE_LINE;
 
+//偏移?目的是什么?
     for (n = ngx_pagesize; n >>= 1; ngx_pagesize_shift++) { /* void */ }
 
     if (ngx_ncpu == 0) {

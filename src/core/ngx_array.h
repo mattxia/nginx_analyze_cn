@@ -11,7 +11,7 @@
 #include <ngx_config.h>
 #include <ngx_core.h>
 
-//数组容器结构体
+//数组容器结构体,size of ()=20B
 struct ngx_array_s {
 	//数组的分配内存的起始地址，就是指针
     void        *elts;
@@ -19,7 +19,7 @@ struct ngx_array_s {
     ngx_uint_t   nelts;
 	//size 为单个元素的大小
     size_t       size;
-	//为其分配的元素个数
+	//为其分配的元素个数(容量)
     ngx_uint_t   nalloc;
 	//应该是全局pool的指针
     ngx_pool_t  *pool;

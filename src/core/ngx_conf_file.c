@@ -799,7 +799,7 @@ ngx_conf_include(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     return rv;
 }
 
-
+//将文件名转成全路径文件名
 ngx_int_t
 ngx_conf_full_name(ngx_cycle_t *cycle, ngx_str_t *name, ngx_uint_t conf_prefix)
 {
@@ -830,6 +830,7 @@ ngx_conf_full_name(ngx_cycle_t *cycle, ngx_str_t *name, ngx_uint_t conf_prefix)
 
 #endif
 
+//分配前缀+文件名个长度的内存
     n = ngx_pnalloc(cycle->pool, len + name->len + 1);
     if (n == NULL) {
         return NGX_ERROR;
@@ -839,12 +840,13 @@ ngx_conf_full_name(ngx_cycle_t *cycle, ngx_str_t *name, ngx_uint_t conf_prefix)
     ngx_cpystrn(p, name->data, name->len + 1);
 
     name->len += len;
+	//通过指针返回文件名，直接操作
     name->data = n;
 
     return NGX_OK;
 }
 
-
+//检查是否是全路径文件名
 static ngx_int_t
 ngx_conf_test_full_name(ngx_str_t *name)
 {
@@ -908,6 +910,7 @@ ngx_conf_open_file(ngx_cycle_t *cycle, ngx_str_t *name)
 #endif
 
     if (name->len) {
+		//文件名
         full = *name;
 
         if (ngx_conf_full_name(cycle, &full, 0) != NGX_OK) {
@@ -916,7 +919,7 @@ ngx_conf_open_file(ngx_cycle_t *cycle, ngx_str_t *name)
 
         part = &cycle->open_files.part;
         file = part->elts;
-
+//现在现有链表上查找是否有
         for (i = 0; /* void */ ; i++) {
 
             if (i >= part->nelts) {

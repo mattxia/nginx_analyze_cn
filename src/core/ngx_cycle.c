@@ -57,7 +57,7 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
     ngx_core_module_t   *module;
     char                 hostname[NGX_MAXHOSTNAMELEN];
 
-    ngx_timezone_update();
+    ngx_timezone_update();	//更新时区
 
     /* force localtime update with a new timezone */
 
@@ -74,7 +74,7 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
         return NULL;
     }
     pool->log = log;
-
+//在内存池上分配cycle
     cycle = ngx_pcalloc(pool, sizeof(ngx_cycle_t));
     if (cycle == NULL) {
         ngx_destroy_pool(pool);
@@ -85,7 +85,7 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
     cycle->log = log;
     cycle->new_log.log_level = NGX_LOG_ERR;
     cycle->old_cycle = old_cycle;
-
+//初始化前缀
     cycle->conf_prefix.len = old_cycle->conf_prefix.len;
     cycle->conf_prefix.data = ngx_pstrdup(pool, &old_cycle->conf_prefix);
     if (cycle->conf_prefix.data == NULL) {
@@ -99,7 +99,7 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
         ngx_destroy_pool(pool);
         return NULL;
     }
-
+//初始化配置文件
     cycle->conf_file.len = old_cycle->conf_file.len;
     cycle->conf_file.data = ngx_pnalloc(pool, old_cycle->conf_file.len + 1);
     if (cycle->conf_file.data == NULL) {
@@ -116,15 +116,15 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
         return NULL;
     }
 
-
+//数组中元素的数目
     n = old_cycle->pathes.nelts ? old_cycle->pathes.nelts : 10;
-
+//在内存池上分配数组
     cycle->pathes.elts = ngx_pcalloc(pool, n * sizeof(ngx_path_t *));
     if (cycle->pathes.elts == NULL) {
         ngx_destroy_pool(pool);
         return NULL;
     }
-
+//实际数组内元素个数初始化为0
     cycle->pathes.nelts = 0;
     cycle->pathes.size = sizeof(ngx_path_t *);
     cycle->pathes.nalloc = n;
@@ -140,7 +140,7 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
     } else {
         n = 20;
     }
-
+//初始化文件链表
     if (ngx_list_init(&cycle->open_files, pool, n, sizeof(ngx_open_file_t))
         != NGX_OK)
     {
@@ -159,14 +159,14 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
     } else {
         n = 1;
     }
-
+//共享内存链表
     if (ngx_list_init(&cycle->shared_memory, pool, n, sizeof(ngx_shm_zone_t))
         != NGX_OK)
     {
         ngx_destroy_pool(pool);
         return NULL;
     }
-
+//初始化listening数组
     n = old_cycle->listening.nelts ? old_cycle->listening.nelts : 10;
 
     cycle->listening.elts = ngx_pcalloc(pool, n * sizeof(ngx_listening_t));
@@ -180,17 +180,17 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
     cycle->listening.nalloc = n;
     cycle->listening.pool = pool;
 
-
+//初始化reusable_connections_queue
     ngx_queue_init(&cycle->reusable_connections_queue);
 
-
+//conf_ctx分配空间
     cycle->conf_ctx = ngx_pcalloc(pool, ngx_max_module * sizeof(void *));
     if (cycle->conf_ctx == NULL) {
         ngx_destroy_pool(pool);
         return NULL;
     }
 
-
+//初始化hostname字符串
     if (gethostname(hostname, NGX_MAXHOSTNAMELEN) == -1) {
         ngx_log_error(NGX_LOG_EMERG, log, ngx_errno, "gethostname() failed");
         ngx_destroy_pool(pool);
@@ -396,6 +396,7 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
 
 
     /* create shared memory */
+	//and initialize
 
     part = &cycle->shared_memory.part;
     shm_zone = part->elts;
@@ -487,13 +488,13 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
 
 
     /* handle the listening sockets */
-
+//"	(尝试5遍)遍历listening数组并打开所有侦听
     if (old_cycle->listening.nelts) {
         ls = old_cycle->listening.elts;
         for (i = 0; i < old_cycle->listening.nelts; i++) {
             ls[i].remain = 0;
         }
-
+//listening是一个array
         nls = cycle->listening.elts;
         for (n = 0; n < cycle->listening.nelts; n++) {
 
@@ -501,7 +502,7 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
                 if (ls[i].ignore) {
                     continue;
                 }
-
+//比较两个地址是否相同
                 if (ngx_cmp_sockaddr(nls[n].sockaddr, ls[i].sockaddr) == NGX_OK)
                 {
                     nls[n].fd = ls[i].fd;
@@ -594,6 +595,9 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
 
     pool->log = cycle->log;
 
+/*并调用所有模块的init_module(实际上只有ngx_event_core_module模块定义了该callback，
+即只有ngx_event_module_init()被调用
+*/
     for (i = 0; ngx_modules[i]; i++) {
         if (ngx_modules[i]->init_module) {
             if (ngx_modules[i]->init_module(cycle) != NGX_OK) {
@@ -849,7 +853,7 @@ ngx_destroy_cycle_pools(ngx_conf_t *conf)
     ngx_destroy_pool(conf->pool);
 }
 
-
+//比较两个地址是否相等
 static ngx_int_t
 ngx_cmp_sockaddr(struct sockaddr *sa1, struct sockaddr *sa2)
 {
@@ -1080,7 +1084,7 @@ ngx_signal_process(ngx_cycle_t *cycle, char *sig)
 
 }
 
-
+//检查是否目标文件是否被锁定了
 static ngx_int_t
 ngx_test_lockfile(u_char *file, ngx_log_t *log)
 {
