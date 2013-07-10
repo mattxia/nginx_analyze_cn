@@ -14,7 +14,7 @@ typedef struct {
     int     signo;
     char   *signame;
     char   *name;
-    void  (*handler)(int signo);
+    void  (*handler)(int signo);	//处理的handler
 } ngx_signal_t;
 
 
@@ -63,7 +63,7 @@ ngx_signal_t  signals[] = {
     { ngx_signal_value(NGX_CHANGEBIN_SIGNAL),
       "SIG" ngx_value(NGX_CHANGEBIN_SIGNAL),
       "",
-      ngx_signal_handler },
+      ngx_signal_handler },	
 
     { SIGALRM, "SIGALRM", "", ngx_signal_handler },
 
@@ -73,7 +73,7 @@ ngx_signal_t  signals[] = {
 
     { SIGCHLD, "SIGCHLD", "", ngx_signal_handler },
 
-    { SIGSYS, "SIGSYS, SIG_IGN", "", SIG_IGN },
+    { SIGSYS, "SIGSYS, SIG_IGN", "", SIG_IGN },	//31,该信号handler=SIG_IGN,表示忽略该信号
 
     { SIGPIPE, "SIGPIPE, SIG_IGN", "", SIG_IGN },
 
@@ -277,18 +277,18 @@ ngx_execute_proc(ngx_cycle_t *cycle, void *data)
     exit(1);
 }
 
-
+//设置signals[]数组中每个信号的action(即常说的注册、安装等)
 ngx_int_t
 ngx_init_signals(ngx_log_t *log)
 {
     ngx_signal_t      *sig;
     struct sigaction   sa;
 
-    for (sig = signals; sig->signo != 0; sig++) {
+    for (sig = signals; sig->signo != 0; sig++) {	//signals数组
         ngx_memzero(&sa, sizeof(struct sigaction));
         sa.sa_handler = sig->handler;
-        sigemptyset(&sa.sa_mask);
-        if (sigaction(sig->signo, &sa, NULL) == -1) {
+        sigemptyset(&sa.sa_mask);	//清空sa_mask
+        if (sigaction(sig->signo, &sa, NULL) == -1) {	//设置sig->signo信号的action,此处sigaction为系统API
             ngx_log_error(NGX_LOG_EMERG, log, ngx_errno,
                           "sigaction(%s) failed", sig->signame);
             return NGX_ERROR;
@@ -563,7 +563,7 @@ ngx_debug_point(void)
     }
 }
 
-
+//向pid这个进程发送信号量
 ngx_int_t
 ngx_os_signal_process(ngx_cycle_t *cycle, char *name, ngx_int_t pid)
 {
@@ -571,6 +571,8 @@ ngx_os_signal_process(ngx_cycle_t *cycle, char *name, ngx_int_t pid)
 
     for (sig = signals; sig->signo != 0; sig++) {
         if (ngx_strcmp(name, sig->name) == 0) {
+			//检查是否是允许的信号，并发送过去
+			//The kill() system call can be used to send any signal to any process group or process
             if (kill(pid, sig->signo) != -1) {
                 return 0;
             }

@@ -160,7 +160,7 @@ static ngx_command_t  ngx_core_commands[] = {
 //¶¨Òångx_core_moduleÉÏÏÂÎÄ,¾²Ì¬³õÊ¼»¯
 static ngx_core_module_t  ngx_core_module_ctx = {
     ngx_string("core"),
-    ngx_core_module_create_conf,
+    ngx_core_module_create_conf,	//¶ÔÓ¦create_confÖ¸Õë
     ngx_core_module_init_conf
 };
 
@@ -303,7 +303,7 @@ main(int argc, char *const *argv)
     if (init_cycle.pool == NULL) {
         return 1;
     }
-
+//ÃüÁîĞĞ²ÎÊı±£´æµ½ngx_os_argv¡¢ngx_argcÒÔ¼°ngx_argvÕâ¼¸¸öÈ«¾ÖµÄ±äÁ¿ÖĞ¡£ÕâËãÊÇÒ»¸ö±¸·İ´æ´¢£¬·½±ãÒÔºómaster½ø³Ì×öÈÈ´úÂëÌæ»»Ö®ÓÃ
     if (ngx_save_argv(&init_cycle, argc, argv) != NGX_OK) {
         return 1;
     }
@@ -338,11 +338,12 @@ o	µ÷ÓÃngx_set_inherited_sockets()ÖğÒ»¶Ôngx_cycle.listeningÊı×éÖĞµÄsockets½øĞĞÉèÖ
     }
 
 //³õÊ¼»¯È«¾ÖÄ£¿éÊı×éµ±ÖĞÃ¿¸öÄ£¿éµÄindex
+//Õâ¸öÉñÃØµÄÊı×éÈ´ÊÇÔÚ×Ô¶¯±àÒëµÄÊ±ºòÉú³ÉµÄ£¬Î»ÓÚobjs/ngx_modules.cÎÄ¼şÖĞ¡£Õâ¸öÑ­»·µÄÄ¿µÄÊÇÇåÎú¿É¼ûµÄ--¶ÔËùÓĞÄ£¿é½øĞĞË÷Òı±àºÅ£¬·½±ãÒÔºó·ÃÎÊ
     ngx_max_module = 0;
     for (i = 0; ngx_modules[i]; i++) {
         ngx_modules[i]->index = ngx_max_module++;
     }
-//o	¸Ã³õÊ¼»¯Ö÷Òª¶Ôngx_cycle½á¹¹½øĞĞ
+//o	¸Ã³õÊ¼»¯Ö÷Òª¶Ôngx_cycle½á¹¹½øĞĞ,ºËĞÄ!!
     cycle = ngx_init_cycle(&init_cycle);
     if (cycle == NULL) {
         if (ngx_test_config) {
@@ -420,7 +421,7 @@ o	µ÷ÓÃngx_set_inherited_sockets()ÖğÒ»¶Ôngx_cycle.listeningÊı×éÖĞµÄsockets½øĞĞÉèÖ
         ngx_single_process_cycle(cycle);	//µ¥½ø³ÌÄ£Ê½
 
     } else {
-        ngx_master_process_cycle(cycle);	//master-slaveÄ£Ê½
+        ngx_master_process_cycle(cycle);	//master-slaveÄ£Ê½Õâ¸ö¹ı³ÌÀïÊµÏÖÁËmaster-workerÄ£Ê½µÄ½ø³ÌÄ£ĞÍ£¬Ò²ÊÇÉú³É»·¾³ÏÂNginxµÄ³£ÓÃÄ£ĞÍ
     }
 
     return 0;
@@ -431,7 +432,7 @@ o	µ÷ÓÃngx_set_inherited_sockets()ÖğÒ»¶Ôngx_cycle.listeningÊı×éÖĞµÄsockets½øĞĞÉèÖ
 ½âÎö»·¾³±äÁ¿NGINX_VAR="NGINX"ÖĞµÄsockets£¬²¢±£´æÖÁngx_cycle.listeningÊı×é£»
 ÉèÖÃngx_inherited=1£»
 µ÷ÓÃngx_set_inherited_sockets()ÖğÒ»¶Ôngx_cycle.listeningÊı×éÖĞµÄsockets½øĞĞÉèÖÃ£»
-*
+*ÎªÊ²Ã´Òª¼Ì³Ğsocket?
 */
 static ngx_int_t
 ngx_add_inherited_sockets(ngx_cycle_t *cycle)
@@ -448,7 +449,7 @@ ngx_add_inherited_sockets(ngx_cycle_t *cycle)
 
     ngx_log_error(NGX_LOG_NOTICE, cycle->log, 0,
                   "using inherited sockets from \"%s\"", inherited);
-
+//³õÊ¼»¯10¸ö?
     if (ngx_array_init(&cycle->listening, cycle->pool, 10,
                        sizeof(ngx_listening_t))
         != NGX_OK)
@@ -475,7 +476,7 @@ ngx_add_inherited_sockets(ngx_cycle_t *cycle)
             }
 
             ngx_memzero(ls, sizeof(ngx_listening_t));
-
+//·Åµ½cycleÉÏµÄlisteningÊı×éµ±ÖĞÈ¥
             ls->fd = (ngx_socket_t) s;
         }
     }
@@ -764,7 +765,7 @@ ngx_get_options(int argc, char *const *argv)
                 ngx_log_stderr(0, "option \"-g\" requires parameter");
                 return NGX_ERROR;
 
-            case 's':
+            case 's':	///signal
                 if (*p) {
                     ngx_signal = (char *) p;
 
@@ -802,7 +803,8 @@ ngx_get_options(int argc, char *const *argv)
     return NGX_OK;
 }
 
-
+//½«ÃüÁîĞĞ²ÎÊı±£´æµ½ngx_os_argv¡¢ngx_argcÒÔ¼°ngx_argvÕâ¼¸¸öÈ«¾ÖµÄ±äÁ¿ÖĞ¡£
+//ÕâËãÊÇÒ»¸ö±¸·İ´æ´¢£¬·½±ãÒÔºómaster½ø³Ì×öÈÈ´úÂëÌæ»»Ö®ÓÃ
 static ngx_int_t
 ngx_save_argv(ngx_cycle_t *cycle, int argc, char *const *argv)
 {
@@ -826,7 +828,7 @@ ngx_save_argv(ngx_cycle_t *cycle, int argc, char *const *argv)
 
     for (i = 0; i < argc; i++) {
         len = ngx_strlen(argv[i]) + 1;
-
+//ÎªÊ²Ã´Õâ¸öµØ·½²»ÔÚpoolÉÏ·ÖÅä?
         ngx_argv[i] = ngx_alloc(len, cycle->log);
         if (ngx_argv[i] == NULL) {
             return NGX_ERROR;
@@ -941,7 +943,7 @@ ngx_process_options(ngx_cycle_t *cycle)
     return NGX_OK;
 }
 
-
+//´´½¨COREÄ£¿éµÄÅäÖÃ½á¹¹
 static void *
 ngx_core_module_create_conf(ngx_cycle_t *cycle)
 {
@@ -990,7 +992,7 @@ ngx_core_module_create_conf(ngx_cycle_t *cycle)
     return ccf;
 }
 
-
+//³õÊ¼»¯ÅäÖÃ½á¹¹
 static char *
 ngx_core_module_init_conf(ngx_cycle_t *cycle, void *conf)
 {
@@ -1029,18 +1031,18 @@ ngx_core_module_init_conf(ngx_cycle_t *cycle, void *conf)
     if (ccf->pid.len == 0) {
         ngx_str_set(&ccf->pid, NGX_PID_PATH);
     }
-
+//×ª»¯³ÉÈ«Â·¾¶Ãû³Æ£¬Êµ¼ÊÉÏÊÇÔÚpid×Ö·û´®Ç°Ãæ¼ÓÉÏNGX_PREFIX /usr/local/nginx
     if (ngx_conf_full_name(cycle, &ccf->pid, 0) != NGX_OK) {
         return NGX_CONF_ERROR;
     }
 
-    ccf->oldpid.len = ccf->pid.len + sizeof(NGX_OLDPID_EXT);
+    ccf->oldpid.len = ccf->pid.len + sizeof(NGX_OLDPID_EXT);//.oldbin
 
     ccf->oldpid.data = ngx_pnalloc(cycle->pool, ccf->oldpid.len);
     if (ccf->oldpid.data == NULL) {
         return NGX_CONF_ERROR;
     }
-
+///usr/local/nginx/logs/nginx.pid.oldbin---oldpid.data
     ngx_memcpy(ngx_cpymem(ccf->oldpid.data, ccf->pid.data, ccf->pid.len),
                NGX_OLDPID_EXT, sizeof(NGX_OLDPID_EXT));
 
@@ -1052,6 +1054,7 @@ ngx_core_module_init_conf(ngx_cycle_t *cycle, void *conf)
         struct passwd  *pwd;
 
         ngx_set_errno(0);
+		//»ñÈ¡ÕË»§ĞÅÏ¢
         pwd = getpwnam(NGX_USER);
         if (pwd == NULL) {
             ngx_log_error(NGX_LOG_EMERG, cycle->log, ngx_errno,
@@ -1063,6 +1066,7 @@ ngx_core_module_init_conf(ngx_cycle_t *cycle, void *conf)
         ccf->user = pwd->pw_uid;
 
         ngx_set_errno(0);
+		//»ñÈ¡ÓÃ»§×éĞÅÏ¢
         grp = getgrnam(NGX_GROUP);
         if (grp == NULL) {
             ngx_log_error(NGX_LOG_EMERG, cycle->log, ngx_errno,
@@ -1077,7 +1081,7 @@ ngx_core_module_init_conf(ngx_cycle_t *cycle, void *conf)
     if (ccf->lock_file.len == 0) {
         ngx_str_set(&ccf->lock_file, NGX_LOCK_PATH);
     }
-
+//"/usr/local/nginx/logs/nginx.lock"
     if (ngx_conf_full_name(cycle, &ccf->lock_file, 0) != NGX_OK) {
         return NGX_CONF_ERROR;
     }
@@ -1100,7 +1104,7 @@ ngx_core_module_init_conf(ngx_cycle_t *cycle, void *conf)
 
         cycle->lock_file.len = lock_file.len + 1;
         lock_file.len += sizeof(".accept");
-
+//ÔÚÄÚ´æ³ØÉÏ·ÖÅäÒ»¸ö¶ÎÄÚ´æ£¬²¢½«src copyµ½destµ±ÖĞ
         cycle->lock_file.data = ngx_pstrdup(cycle->pool, &lock_file);
         if (cycle->lock_file.data == NULL) {
             return NGX_CONF_ERROR;

@@ -100,7 +100,8 @@ uint32_t  ngx_crc32_table256[] = {
 
 uint32_t *ngx_crc32_table_short = ngx_crc32_table16;
 
-
+//初始化一个做循环冗余校验的表，
+//由此可以看出后续的循环冗余校验将采用高效的查表法
 ngx_int_t
 ngx_crc32_table_init(void)
 {

@@ -13,11 +13,11 @@
 
 
 typedef struct ngx_listening_s  ngx_listening_t;
-
+//size of 184
 struct ngx_listening_s {
-    ngx_socket_t        fd;
+    ngx_socket_t        fd;		//文件描述符, 即socket
 
-    struct sockaddr    *sockaddr;
+    struct sockaddr    *sockaddr;		//socket addr
     socklen_t           socklen;    /* size of sockaddr */
     size_t              addr_text_max_len;
     ngx_str_t           addr_text;
@@ -25,8 +25,8 @@ struct ngx_listening_s {
     int                 type;
 
     int                 backlog;
-    int                 rcvbuf;
-    int                 sndbuf;
+    int                 rcvbuf;		//recv buffer
+    int                 sndbuf;		//send buffer
 
     /* handler of accepted connection */
     ngx_connection_handler_pt   handler;
@@ -42,7 +42,7 @@ struct ngx_listening_s {
     /* should be here because of the deferred accept */
     ngx_msec_t          post_accept_timeout;
 
-    ngx_listening_t    *previous;
+    ngx_listening_t    *previous;		//指向前一个ngx_listening_t结构
     ngx_connection_t   *connection;
 
     unsigned            open:1;

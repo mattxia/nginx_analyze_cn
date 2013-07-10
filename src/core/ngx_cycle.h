@@ -87,12 +87,12 @@ typedef struct {
      ngx_uint_t               cpu_affinity_n;
      u_long                  *cpu_affinity;
 
-     char                    *username;
-     ngx_uid_t                user;
-     ngx_gid_t                group;
+     char                    *username;		//ÓÃ»§Ãû
+     ngx_uid_t                user;			//user id
+     ngx_gid_t                group;		//group id
 
      ngx_str_t                working_directory;
-     ngx_str_t                lock_file;
+     ngx_str_t                lock_file;		
 
      ngx_str_t                pid;
      ngx_str_t                oldpid;

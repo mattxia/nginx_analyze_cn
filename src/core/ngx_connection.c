@@ -84,7 +84,10 @@ ngx_create_listening(ngx_conf_t *cf, void *sockaddr, socklen_t socklen)
     return ls;
 }
 
-
+/*该函数从参数cycle(后续调用ngx_init_cycle()函数后全局变量ngx_cycle会指向
+该参数)的listening数组中逐一对每个元素(ngx_listening_t结构)进行初始化，
+即初始化除fd字段外的其他的字段
+*/
 ngx_int_t
 ngx_set_inherited_sockets(ngx_cycle_t *cycle)
 {
