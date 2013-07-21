@@ -73,6 +73,7 @@ ngx_write_channel(ngx_socket_t s, ngx_channel_t *ch, size_t size,
     msg.msg_iov = iov;
     msg.msg_iovlen = 1;
 
+	//使用sendmsg,参考unix网络编程
     n = sendmsg(s, &msg, 0);
 
     if (n == -1) {
@@ -88,7 +89,8 @@ ngx_write_channel(ngx_socket_t s, ngx_channel_t *ch, size_t size,
     return NGX_OK;
 }
 
-
+/*读取channel当中的命令
+*/
 ngx_int_t
 ngx_read_channel(ngx_socket_t s, ngx_channel_t *ch, size_t size, ngx_log_t *log)
 {
@@ -122,6 +124,7 @@ ngx_read_channel(ngx_socket_t s, ngx_channel_t *ch, size_t size, ngx_log_t *log)
     msg.msg_accrightslen = sizeof(int);
 #endif
 
+	/* 读出master进程发送给过来的指令数据, ngx_read_channel 是利用recvmsg实现，详细介绍见《unix网络编程》 */
     n = recvmsg(s, &msg, 0);
 
     if (n == -1) {
@@ -138,7 +141,7 @@ ngx_read_channel(ngx_socket_t s, ngx_channel_t *ch, size_t size, ngx_log_t *log)
         ngx_log_debug0(NGX_LOG_DEBUG_CORE, log, 0, "recvmsg() returned zero");
         return NGX_ERROR;
     }
-
+	//如果读出来小于channel字段，则出错
     if ((size_t) n < sizeof(ngx_channel_t)) {
         ngx_log_error(NGX_LOG_ALERT, log, 0,
                       "recvmsg() returned not enough data: %uz", n);
@@ -166,6 +169,7 @@ ngx_read_channel(ngx_socket_t s, ngx_channel_t *ch, size_t size, ngx_log_t *log)
 
         /* ch->fd = *(int *) CMSG_DATA(&cmsg.cm); */
 
+		//如果有头域，则需要转下
         ngx_memcpy(&ch->fd, CMSG_DATA(&cmsg.cm), sizeof(int));
     }
 
@@ -191,7 +195,8 @@ ngx_read_channel(ngx_socket_t s, ngx_channel_t *ch, size_t size, ngx_log_t *log)
     return n;
 }
 
-
+/*
+将channel放到epoll等事件处理模块中*/
 ngx_int_t
 ngx_add_channel_event(ngx_cycle_t *cycle, ngx_fd_t fd, ngx_int_t event,
     ngx_event_handler_pt handler)

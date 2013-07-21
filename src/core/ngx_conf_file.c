@@ -97,7 +97,9 @@ ngx_conf_param(ngx_conf_t *cf)
     return rv;
 }
 
-
+/*解析配置文件??
+支持三种parse模式,parse_file,parse_block,parse_param
+*/
 char *
 ngx_conf_parse(ngx_conf_t *cf, ngx_str_t *filename)
 {
@@ -132,7 +134,7 @@ ngx_conf_parse(ngx_conf_t *cf, ngx_str_t *filename)
         prev = cf->conf_file;
 
         cf->conf_file = &conf_file;
-
+		//获取文件信息
         if (ngx_fd_info(fd, &cf->conf_file->file.info) == -1) {
             ngx_log_error(NGX_LOG_EMERG, cf->log, ngx_errno,
                           ngx_fd_info_n " \"%s\" failed", filename->data);
@@ -169,6 +171,7 @@ ngx_conf_parse(ngx_conf_t *cf, ngx_str_t *filename)
 
 
     for ( ;; ) {
+		//读取文件并获取token
         rc = ngx_conf_read_token(cf);
 
         /*

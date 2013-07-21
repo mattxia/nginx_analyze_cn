@@ -78,7 +78,8 @@ static ngx_cycle_t      ngx_exit_cycle;
 static ngx_log_t        ngx_exit_log;
 static ngx_open_file_t  ngx_exit_log_file;
 
-
+//master-slave模式这个过程里实现了master-worker模式的进程模型，
+//也是生成环境下Nginx的常用模型
 void
 ngx_master_process_cycle(ngx_cycle_t *cycle)
 {
@@ -93,7 +94,7 @@ ngx_master_process_cycle(ngx_cycle_t *cycle)
     ngx_msec_t         delay;
     ngx_listening_t   *ls;
     ngx_core_conf_t   *ccf;
-
+	//屏蔽一系列信号，以防止被打扰
     sigemptyset(&set);
     sigaddset(&set, SIGCHLD);
     sigaddset(&set, SIGALRM);
@@ -110,7 +111,7 @@ ngx_master_process_cycle(ngx_cycle_t *cycle)
         ngx_log_error(NGX_LOG_ALERT, cycle->log, ngx_errno,
                       "sigprocmask() failed");
     }
-
+	//清空
     sigemptyset(&set);
 
 
@@ -132,9 +133,10 @@ ngx_master_process_cycle(ngx_cycle_t *cycle)
 
 
     ccf = (ngx_core_conf_t *) ngx_get_conf(cycle->conf_ctx, ngx_core_module);
-
+	//启动worker 进程
     ngx_start_worker_processes(cycle, ccf->worker_processes,
                                NGX_PROCESS_RESPAWN);
+	//启动cache 子进程
     ngx_start_cache_manager_processes(cycle, 0);
 
     ngx_new_binary = 0;
@@ -142,6 +144,7 @@ ngx_master_process_cycle(ngx_cycle_t *cycle)
     sigio = 0;
     live = 1;
 
+	//for循环处理信号量，主进程循环体
     for ( ;; ) {
         if (delay) {
             if (ngx_sigalrm) {
@@ -166,20 +169,25 @@ ngx_master_process_cycle(ngx_cycle_t *cycle)
 
         ngx_log_debug0(NGX_LOG_DEBUG_EVENT, cycle->log, 0, "sigsuspend");
 
+		//挂起master进程，等待信号产生
+
         sigsuspend(&set);
+
+		//得到信号量继续往下处理
 
         ngx_time_update();
 
         ngx_log_debug1(NGX_LOG_DEBUG_EVENT, cycle->log, 0,
                        "wake up, sigio %i", sigio);
-
+		
         if (ngx_reap) {
             ngx_reap = 0;
             ngx_log_debug0(NGX_LOG_DEBUG_EVENT, cycle->log, 0, "reap children");
-
+			//检查是否还有活跃的worker子进程，等待全部退出后，自己退出
             live = ngx_reap_children(cycle);
         }
 
+		//live=0子进程全部退出，并且前面收到的是quit或者terminate命令，则退出
         if (!live && (ngx_terminate || ngx_quit)) {
             ngx_master_process_exit(cycle);
         }
@@ -207,9 +215,10 @@ ngx_master_process_cycle(ngx_cycle_t *cycle)
         }
 
         if (ngx_quit) {
+			//向工作进程发送信号
             ngx_signal_worker_processes(cycle,
                                         ngx_signal_value(NGX_SHUTDOWN_SIGNAL));
-
+			//逐个关闭socket
             ls = cycle->listening.elts;
             for (n = 0; n < cycle->listening.nelts; n++) {
                 if (ngx_close_socket(ls[n].fd) == -1) {
@@ -219,7 +228,13 @@ ngx_master_process_cycle(ngx_cycle_t *cycle)
                 }
             }
             cycle->listening.nelts = 0;
+			//是continue不是exit
+			/*worker进程是master的子进程，所以worker退出后，
+			将发送SIGCHLD信号给master进程，
+			好让master进程为其善后（否则将出现"僵尸"进程）。
+			在master进程收到SIGCHLD信号，就会设置全局变量ngx_reap为1了
 
+			*/
             continue;
         }
 
@@ -342,7 +357,7 @@ ngx_single_process_cycle(ngx_cycle_t *cycle)
     }
 }
 
-
+//启动worker子进程
 static void
 ngx_start_worker_processes(ngx_cycle_t *cycle, ngx_int_t n, ngx_int_t type)
 {
@@ -357,12 +372,13 @@ ngx_start_worker_processes(ngx_cycle_t *cycle, ngx_int_t n, ngx_int_t type)
 
         cpu_affinity = ngx_get_cpu_affinity(i);
 
+		//创建子 进程
         ngx_spawn_process(cycle, ngx_worker_process_cycle, NULL,
                           "worker process", type);
 
         ch.pid = ngx_processes[ngx_process_slot].pid;
-        ch.slot = ngx_process_slot;
-        ch.fd = ngx_processes[ngx_process_slot].channel[0];
+        ch.slot = ngx_process_slot;	//process数组当中的位置?
+        ch.fd = ngx_processes[ngx_process_slot].channel[0];	//channel数组就是用于socketpair函数创建一个进程间通道之用
 
         ngx_pass_open_channel(cycle, &ch);
     }
@@ -450,7 +466,7 @@ ngx_pass_open_channel(ngx_cycle_t *cycle, ngx_channel_t *ch)
     }
 }
 
-
+//向workers处理信号量
 static void
 ngx_signal_worker_processes(ngx_cycle_t *cycle, int signo)
 {
@@ -559,7 +575,7 @@ ngx_reap_children(ngx_cycle_t *cycle)
     ngx_channel_t     ch;
     ngx_core_conf_t  *ccf;
 
-    ch.command = NGX_CMD_CLOSE_CHANNEL;
+    ch.command = NGX_CMD_CLOSE_CHANNEL;	//关闭channel命令
     ch.fd = -1;
 
     live = 0;
@@ -674,7 +690,7 @@ ngx_reap_children(ngx_cycle_t *cycle)
     return live;
 }
 
-
+//master进程退出
 static void
 ngx_master_process_exit(ngx_cycle_t *cycle)
 {
@@ -712,7 +728,7 @@ ngx_master_process_exit(ngx_cycle_t *cycle)
     exit(0);
 }
 
-
+//worker进程工作主体
 static void
 ngx_worker_process_cycle(ngx_cycle_t *cycle, void *data)
 {
@@ -720,9 +736,10 @@ ngx_worker_process_cycle(ngx_cycle_t *cycle, void *data)
     ngx_connection_t  *c;
 
     ngx_process = NGX_PROCESS_WORKER;
-
+//对worker进程进行初始化操作
     ngx_worker_process_init(cycle, 1);
 
+//设置进程名为worker process
     ngx_setproctitle("worker process");
 
 #if (NGX_THREADS)
@@ -771,11 +788,15 @@ ngx_worker_process_cycle(ngx_cycle_t *cycle, void *data)
     }
 #endif
 
+/*worker进程循环主体
+*/
     for ( ;; ) {
 
+		/* ngx_exiting是在worker进程收到SIGQUIT信号后设置的，稍后就能看到庐山真面目了。 */
         if (ngx_exiting) {
 
             c = cycle->connections;
+			/* worker进程退出前，先得处理完每个connection上已经发生的事件。 */
 
             for (i = 0; i < cycle->connection_n; i++) {
 
@@ -786,6 +807,7 @@ ngx_worker_process_cycle(ngx_cycle_t *cycle, void *data)
                     c[i].read->handler(c[i].read);
                 }
             }
+			/* 处理完所有事件后，调用ngx_worker_process_exit函数，worker进程退出。 */
 
             if (ngx_event_timer_rbtree.root == ngx_event_timer_rbtree.sentinel)
             {
@@ -796,14 +818,17 @@ ngx_worker_process_cycle(ngx_cycle_t *cycle, void *data)
         }
 
         ngx_log_debug0(NGX_LOG_DEBUG_EVENT, cycle->log, 0, "worker cycle");
+		/* 这里是worker进程处理事件的核心开始。也即是，worker进程从里开始做一些特定的事情了， 我们完全可以修改此处的代码，让Nginx为我们做一些其他的事情，呵呵。 */ 
 
         ngx_process_events_and_timers(cycle);
+		/* worker进程收到了SIGINT信号，退出。 */ 
 
         if (ngx_terminate) {
             ngx_log_error(NGX_LOG_NOTICE, cycle->log, 0, "exiting");
 
             ngx_worker_process_exit(cycle);
         }
+		/* worker进程收到了SIGQUIT信号，如果此时worker进程不是出于exiting状态， 就将设置ngx_exiting为1，让其进入exiting状态；同时关闭监听套接口。 */
 
         if (ngx_quit) {
             ngx_quit = 0;
@@ -812,10 +837,12 @@ ngx_worker_process_cycle(ngx_cycle_t *cycle, void *data)
             ngx_setproctitle("worker process is shutting down");
 
             if (!ngx_exiting) {
+				//先关闭sockets
                 ngx_close_listening_sockets(cycle);
                 ngx_exiting = 1;
             }
         }
+		/* worker进程收到了SIGUSR1信号 */
 
         if (ngx_reopen) {
             ngx_reopen = 0;
@@ -825,7 +852,7 @@ ngx_worker_process_cycle(ngx_cycle_t *cycle, void *data)
     }
 }
 
-
+//初始化worker进程
 static void
 ngx_worker_process_init(ngx_cycle_t *cycle, ngx_uint_t priority)
 {
@@ -836,6 +863,7 @@ ngx_worker_process_init(ngx_cycle_t *cycle, ngx_uint_t priority)
     ngx_core_conf_t  *ccf;
     ngx_listening_t  *ls;
 
+	//
     if (ngx_set_environment(cycle, NULL) == NULL) {
         /* fatal */
         exit(2);
@@ -965,21 +993,26 @@ ngx_worker_process_init(ngx_cycle_t *cycle, ngx_uint_t priority)
             }
         }
     }
-
+	///* 此处循环用于关闭其他worker进程的无用channel资源 */
     for (n = 0; n < ngx_last_process; n++) {
-
+	//ngx_processes数组中n位置的进程不存在。
         if (ngx_processes[n].pid == -1) {
             continue;
         }
-
+		/* 全局变量ngx_process_slot的值是创建worker进程的时候，从 master进程复制过来的，所以此处ngx_process_slot就指本worker 进程在ngx_process_slot数组中的索引位置。此处不处理本worker 进程，所以跳过*/
         if (n == ngx_process_slot) {
             continue;
         }
-
+		///* channel不存在，继续跳过。 */
         if (ngx_processes[n].channel[1] == -1) {
             continue;
         }
 
+		/* ngx_processes数组中存储的是每个worker进程的资源，
+		是master进程负责创建的。 因此创建一个worker进程的时候，
+		就一同将这些资源复制过来了，
+		所以此处就关闭 无用的channel--其他worker进程的读端文件描述符，
+		保留写端文件描述符做 worker间的通信之用。 */
         if (close(ngx_processes[n].channel[1]) == -1) {
             ngx_log_error(NGX_LOG_ALERT, cycle->log, ngx_errno,
                           "close() channel failed");
@@ -995,6 +1028,14 @@ ngx_worker_process_init(ngx_cycle_t *cycle, ngx_uint_t priority)
     ngx_last_process = 0;
 #endif
 
+	/*
+ngx_channel就是worker进程channel的读端，
+这里调用ngx_add_channel_event将channel放入Nginx关心的集合中，
+同时关注起这个channel上的读事件，
+也即这个channel上有数据到来后，就立马采取读channel操作
+将channel放入到epoll等事件处理模块
+
+*/
     if (ngx_add_channel_event(cycle, ngx_channel, NGX_READ_EVENT,
                               ngx_channel_handler)
         == NGX_ERROR)
@@ -1067,7 +1108,9 @@ ngx_worker_process_exit(ngx_cycle_t *cycle)
     exit(0);
 }
 
-
+/*
+channel的处理函数
+*/
 static void
 ngx_channel_handler(ngx_event_t *ev)
 {
@@ -1086,6 +1129,7 @@ ngx_channel_handler(ngx_event_t *ev)
 
     for ( ;; ) {
 
+		//读取chennel命令,并根据命令设置相应的全局变量
         n = ngx_read_channel(c->fd, &ch, sizeof(ngx_channel_t), ev->log);
 
         ngx_log_debug1(NGX_LOG_DEBUG_CORE, ev->log, 0, "channel: %i", n);

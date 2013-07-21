@@ -20,7 +20,8 @@ typedef void (*ngx_spawn_proc_pt) (ngx_cycle_t *cycle, void *data);
 typedef struct {
     ngx_pid_t           pid;
     int                 status;
-    ngx_socket_t        channel[2];
+	//master和worker进程以及worker进程之间都可以通过这样的一个通道进行通信，这个通道就是在ngx_spawn_process函数中fork之前调用socketpair创建的
+    ngx_socket_t        channel[2];//channel数组就是用于socketpair函数创建一个进程间通道之用
 
     ngx_spawn_proc_pt   proc;
     void               *data;

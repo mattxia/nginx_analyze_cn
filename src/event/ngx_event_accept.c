@@ -13,7 +13,10 @@ static ngx_int_t ngx_enable_accept_events(ngx_cycle_t *cycle);
 static ngx_int_t ngx_disable_accept_events(ngx_cycle_t *cycle);
 static void ngx_close_accepted_connection(ngx_connection_t *c);
 
+/*
+acceptÊÂ¼þ¾ÍÊÇ¼àÌýÌ×½Ó¿ÚÉÏÓÐÐÂµÄÁ¬½Óµ½À´µÄÊÂ¼þ
 
+*/
 void
 ngx_event_accept(ngx_event_t *ev)
 {
@@ -54,12 +57,15 @@ ngx_event_accept(ngx_event_t *ev)
             s = accept4(lc->fd, (struct sockaddr *) sa, &socklen,
                         SOCK_NONBLOCK);
         } else {
+        /*acceptÒ»¸öÐÂµÄÁ¬½Ó*/
             s = accept(lc->fd, (struct sockaddr *) sa, &socklen);
         }
 #else
+		/*acceptÒ»¸öÐÂµÄÁ¬½Ó*/
         s = accept(lc->fd, (struct sockaddr *) sa, &socklen);
 #endif
 
+		/*Á¬½ÓµÄ´íÎó´¦Àí*/
         if (s == -1) {
             err = ngx_socket_errno;
 
@@ -103,9 +109,17 @@ ngx_event_accept(ngx_event_t *ev)
         (void) ngx_atomic_fetch_add(ngx_stat_accepted, 1);
 #endif
 
+		/*acceptµ½Ò»¸öÐÂµÄÁ¬½Óºó£¬¾ÍÖØÐÂ¼ÆËãngx_accept_disabledµÄÖµ
+		ngx_accept_disabledÒÑ¾­Ìá¼°¹ýÁË£¬ËüÖ÷ÒªÓÃÀ´×ö¸ºÔØ¾ùºâÖ®ÓÃ¡£  
+		ÕâÀï£¬ÎÒÃÇÄÜ¹»¿´µ½ËüµÄÇóÖµ·½Ê½ÊÇ¡°×ÜÁ¬½ÓÊýµÄ°Ë·ÖÖ®Ò»£¬
+		¼õÈ¥ Ê£ÓàµÄÁ¬½ÓÊý¡±¡£×ÜÁ¬½ÓÊýÊÇÖ¸Ã¿¸ö½ø³ÌÉè¶¨µÄ×î´óÁ¬½ÓÊý£¬
+		Õâ¸öÊý×Ö ¿ÉÒÔÔÚÅäÖÃÎÄ¼þÖÐÖ¸¶¨¡£ÓÉ´Ë´¦µÄ¼ÆËã·½Ê½£¬¿ÉÒÔ¿´³ö£
+		ºÃ¿¸ö½ø³Ìaccept µ½×ÜÁ¬½ÓÊýµÄ7/8ºó£¬ngx_accept_disabled¾Í´óÓÚ0ÁË£¬
+		Á¬½ÓÒ²¾Í ³¬ÔØÁË¡£ */
         ngx_accept_disabled = ngx_cycle->connection_n / 8
                               - ngx_cycle->free_connection_n;
 
+		/*´ÓconnectionsÊý×éÖÐ»ñÈ¡Ò»¸öconnecttion slotÀ´Î¬»¤ÐÂµÄÁ¬½Ó*/
         c = ngx_get_connection(s, ev->log);
 
         if (c == NULL) {
@@ -121,6 +135,7 @@ ngx_event_accept(ngx_event_t *ev)
         (void) ngx_atomic_fetch_add(ngx_stat_active, 1);
 #endif
 
+		/*ÎªÐÂµÄÁ¬½Ó´´½¨ÆðÒ»¸ömemory pool£¬Á¬½Ó¹Ø±ÕµÄÊ±ºò£¬²ÅÊÍ·ÅÕâ¸öpool*/
         c->pool = ngx_create_pool(ls->pool_size, ev->log);
         if (c->pool == NULL) {
             ngx_close_accepted_connection(c);
@@ -154,6 +169,7 @@ ngx_event_accept(ngx_event_t *ev)
             }
 
         } else {
+        	/*ÎÒÃÇÊ¹ÓÃµÄepollÄ£ÐÍ£¬ÔÚÕâÀïÉèÖÃÁ¬½ÓÎªnonblocking*/
             if (!(ngx_event_flags & (NGX_USE_AIO_EVENT|NGX_USE_RTSIG_EVENT))) {
                 if (ngx_nonblocking(s) == -1) {
                     ngx_log_error(NGX_LOG_ALERT, ev->log, ngx_socket_errno,
@@ -166,6 +182,7 @@ ngx_event_accept(ngx_event_t *ev)
 
         *log = ls->log;
 
+		/*³õÊ¼»¯ÐÂÁ¬½Ó*/
         c->recv = ngx_recv;
         c->send = ngx_send;
         c->recv_chain = ngx_recv_chain;
@@ -280,6 +297,10 @@ ngx_event_accept(ngx_event_t *ev)
         log->data = NULL;
         log->handler = NULL;
 
+		/*ÕâÀïµÄlisten handlerºÜÖØÒª£¬Ëü½«Íê³ÉÐÂÁ¬½ÓµÄ×îºó³õÊ¼»¯¹¤×÷ 
+		Í¬Ê±½«acceptµ½µÄÐÂÁ¬½Ó·ÅÈëepollÖÐ£»¹ÒÔÚÕâ¸öhandlerÉÏµÄº¯Êý ¾ÍÊÇ
+		ngx_http_init_connection(Î»ÓÚsrc/http/ngx_http_request.cÖÐ)£» Õâ¸öº¯Êý·ÅÔÚ·ÖÎöhttpÄ£
+		¿éµÄÊ±ºòÔÙ¿´°É¡£ */
         ls->handler(c);
 
         if (ngx_event_flags & NGX_USE_KQUEUE_EVENT) {

@@ -13,14 +13,14 @@
 
 
 struct ngx_file_s {
-    ngx_fd_t                   fd;
-    ngx_str_t                  name;
+    ngx_fd_t                   fd;		//文件句柄?
+    ngx_str_t                  name;	//文件名
     ngx_file_info_t            info;
 
-    off_t                      offset;
-    off_t                      sys_offset;
+    off_t                      offset;		//偏移量
+    off_t                      sys_offset;		//
 
-    ngx_log_t                 *log;
+    ngx_log_t                 *log;				//日志
 
 #if (NGX_HAVE_FILE_AIO)
     ngx_event_aio_t           *aio;

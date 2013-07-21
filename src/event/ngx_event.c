@@ -217,20 +217,43 @@ ngx_process_events_and_timers(ngx_cycle_t *cycle)
 
 #endif
     }
+	/*ngx_use_accept_mutex变量代表是否使用accept互斥体 默认是使用，
+	accept_mutex off;指令关闭。 accept mutex的作用就是避免惊群，
+	同时实现负载均衡。 */
 
     if (ngx_use_accept_mutex) {
+
+		/* ngx_accept_disabled变量在ngx_event_accept函数中计算。 
+		如果ngx_accept_disabled大于了0，就表示该进程接受的 连接过多，
+		因此就放弃一次争抢accept mutex的机会，同时将 自己减1。然后，
+		继续处理已有连接上的事件。Nginx就借用 此变量实现了进程关于
+		连接的基本负载均衡。 */
         if (ngx_accept_disabled > 0) {
             ngx_accept_disabled--;
 
         } else {
+
+		/* ngx_accept_disabled小于0，连接数没超载*/  
+		/*尝试锁accept mutex，只有成功获取锁的进程，
+		才会将listen 套接字放入epoll中。因此，这就保证了
+		只有一个进程拥有 监听套接口，故所有进程阻塞在epoll_wait时，
+		不会出现惊群现象。 */
             if (ngx_trylock_accept_mutex(cycle) == NGX_ERROR) {
                 return;
             }
 
             if (ngx_accept_mutex_held) {
+				/*获取锁的进程，将添加一个NGX_POST_EVENTS标志，
+				此标志的作用是将所有产生的事件放入一个队列中，
+				等释放锁后，再慢慢来处理事件。因为，
+				处理事件可能 会很耗时，如果不先释放锁再处理的话，
+				该进程就长 时间霸占了锁，导致其他进程无法获取锁，
+				这样accept 的效率就低了。 */
                 flags |= NGX_POST_EVENTS;
 
             } else {
+            /*没有获得锁的进程，当然不需要NGX_POST_EVENTS标志了。
+            			但需要设置最长延迟多久，再次去争抢锁。 */
                 if (timer == NGX_TIMER_INFINITE
                     || timer > ngx_accept_mutex_delay)
                 {
@@ -242,20 +265,33 @@ ngx_process_events_and_timers(ngx_cycle_t *cycle)
 
     delta = ngx_current_msec;
 
+	/*epoll开始wait事件了,ngx_process_events的具体实现是对应到 epoll模块中的
+	ngx_epoll_process_events函数。单独分析epoll 模块的时候，再具体看看。 */
     (void) ngx_process_events(cycle, timer, flags);
 
-    delta = ngx_current_msec - delta;
+    delta = ngx_current_msec - delta;	/*统计本次wait事件的耗时*/
 
     ngx_log_debug1(NGX_LOG_DEBUG_EVENT, cycle->log, 0,
                    "timer delta: %M", delta);
 
+	/*ngx_posted_accept_events是一个事件队列 暂存epoll从监听套接口wait到的accept事件。
+	前文提到的NGX_POST_EVENTS标志被使用后，就会将 所有的accept事件暂存到这
+	个队列。  这里完成对队列中的accept事件的处理，实际就是调用
+	ngx_event_accept函数来获取一个新的连接，然后放入 epoll中。 */
     if (ngx_posted_accept_events) {
         ngx_event_process_posted(cycle, &ngx_posted_accept_events);
     }
+	/*所有accept事件处理完成，如果拥有锁的话，就赶紧释放了。 
+	其他进程还等着抢了。 */
 
     if (ngx_accept_mutex_held) {
         ngx_shmtx_unlock(&ngx_accept_mutex);
     }
+
+	/*delta是上文对epoll wait事件的耗时统计，
+	存在毫秒级的耗时 就对所有事件的timer进行检查，
+	如果time out就从timer rbtree中， 删除到期的timer，
+	同时调用相应事件的handler函数完成处理。 */
 
     if (delta) {
         ngx_event_expire_timers();
@@ -264,6 +300,9 @@ ngx_process_events_and_timers(ngx_cycle_t *cycle)
     ngx_log_debug1(NGX_LOG_DEBUG_EVENT, cycle->log, 0,
                    "posted events %p", ngx_posted_events);
 
+	/*处理普通事件（连接上获得的读写事件）队列上的所有事件， 
+	因为每个事件都有自己的handler方法，该怎么处理事件就 依赖于
+	事件的具体handler了。 */
     if (ngx_posted_events) {
         if (ngx_threaded) {
             ngx_wakeup_worker_thread(cycle);
@@ -440,7 +479,7 @@ ngx_event_module_init(ngx_cycle_t *cycle)
                       "no \"events\" section in configuration");
         return NGX_ERROR;
     }
-
+	/*取得ngx_event_core_module模块的配置结构*/
     ecf = (*cf)[ngx_event_core_module.ctx_index];
 
     if (!ngx_test_config && ngx_process <= NGX_PROCESS_MASTER) {
@@ -448,8 +487,10 @@ ngx_event_module_init(ngx_cycle_t *cycle)
                       "using the \"%s\" event method", ecf->name);
     }
 
+	/*取得ngx_core_module模块的配置结构*/
     ccf = (ngx_core_conf_t *) ngx_get_conf(cycle->conf_ctx, ngx_core_module);
 
+	/*从ngx_core_module模块的配置结构中获取timer_resolution指令的配置参数*/
     ngx_timer_resolution = ccf->timer_resolution;
 
 #if !(NGX_WIN32)
@@ -479,10 +520,14 @@ ngx_event_module_init(ngx_cycle_t *cycle)
 #endif /* !(NGX_WIN32) */
 
 
+	/*如果关闭了master进程，就不需要下面的步骤了。
+	因为，关闭了master进程就是 单进程方式工作，
+	下面的步骤是创建共享内存实现锁等工作，单进程不需要。 */
     if (ccf->master == 0) {
         return NGX_OK;
     }
 
+	/*已经存在accept互斥体了，不需要再重复创建*/ 
     if (ngx_accept_mutex_ptr) {
         return NGX_OK;
     }
@@ -491,6 +536,8 @@ ngx_event_module_init(ngx_cycle_t *cycle)
     /* cl should be equal or bigger than cache line size */
 
     cl = 128;
+	/*后面将会创建size大小的共享内存，这块共享内存将被均分成三段，
+	分别供ngx_accept_mutex、ngx_connection_counter、ngx_temp_number 使用。 */
 
     size = cl            /* ngx_accept_mutex */
            + cl          /* ngx_connection_counter */
@@ -507,26 +554,36 @@ ngx_event_module_init(ngx_cycle_t *cycle)
 
 #endif
 
+	/*开始着手创建共享内存，大小为size，命名为nginx_shared_zone*/
+
     shm.size = size;
     shm.name.len = sizeof("nginx_shared_zone");
     shm.name.data = (u_char *) "nginx_shared_zone";
     shm.log = cycle->log;
 
+	/*创建起共享内存，共享内存的起始地址保存在shm.addr*/
     if (ngx_shm_alloc(&shm) != NGX_OK) {
         return NGX_ERROR;
     }
 
+	/*取得共享内存的起始地址*/
     shared = shm.addr;
 
+	/*accept互斥体取得共享内存的第一段cl大小内存*/
     ngx_accept_mutex_ptr = (ngx_atomic_t *) shared;
     ngx_accept_mutex.spin = (ngx_uint_t) -1;
 
+	/*创建accept互斥体。  accept互斥体的实现依赖是否支持原子操作，
+	如果有相应的原子操作； 就是用取得的这段共享内存来实现accept互斥体；
+	否则，将使用文件 锁来实现accept互斥体。  accept互斥体的作用是：
+	避免惊群和实现worker进程的负载均衡。 */
     if (ngx_shmtx_create(&ngx_accept_mutex, shared, cycle->lock_file.data)
         != NGX_OK)
     {
         return NGX_ERROR;
     }
 
+	/*ngx_connection_counter取得共享内存的第二段cl大小内存*/
     ngx_connection_counter = (ngx_atomic_t *) (shared + 1 * cl);
 
     (void) ngx_atomic_cmp_set(ngx_connection_counter, 0, 1);
@@ -535,6 +592,7 @@ ngx_event_module_init(ngx_cycle_t *cycle)
                    "counter: %p, %d",
                    ngx_connection_counter, *ngx_connection_counter);
 
+	/*ngx_temp_number取得共享内存的第三段cl大小内存*/
     ngx_temp_number = (ngx_atomic_t *) (shared + 2 * cl);
 
     tp = ngx_timeofday();
@@ -582,12 +640,18 @@ ngx_event_process_init(ngx_cycle_t *cycle)
     ngx_event_conf_t    *ecf;
     ngx_event_module_t  *module;
 
+	/*获取相应模块的配置结构*/
     ccf = (ngx_core_conf_t *) ngx_get_conf(cycle->conf_ctx, ngx_core_module);
     ecf = ngx_event_get_conf(cycle->conf_ctx, ngx_event_core_module);
 
+	/*master进程打开，worker进程数大于1，配置了accetp_mutex(默认使用) 时，
+	才使用accept互斥体。 */
     if (ccf->master && ccf->worker_processes > 1 && ecf->accept_mutex) {
+		/* 1 使用accept互斥体， 0 不使用*/
         ngx_use_accept_mutex = 1;
+		/* ngx_accept_mutex_held代表是否获得accept互斥体*/
         ngx_accept_mutex_held = 0;
+		/*抢互斥体失败后，下次再抢的间隔时间*/
         ngx_accept_mutex_delay = ecf->accept_mutex_delay;
 
     } else {
@@ -601,25 +665,42 @@ ngx_event_process_init(ngx_cycle_t *cycle)
     }
 #endif
 
+	/*初始化计时器，此处将会创建起一颗红黑色，来维护计时器。*/
     if (ngx_event_timer_init(cycle->log) == NGX_ERROR) {
         return NGX_ERROR;
     }
 
     for (m = 0; ngx_modules[m]; m++) {
+		/*非NGX_EVENT_MODULE跳过*/
         if (ngx_modules[m]->type != NGX_EVENT_MODULE) {
             continue;
         }
 
         if (ngx_modules[m]->ctx_index != ecf->use) {
+			/*非use配置指令指定的模块跳过，Linux默认epoll*/
             continue;
         }
 
         module = ngx_modules[m]->ctx;
+		/*调用具体事件模块的init函数。  
+		由于Nginx实现了很多的事件模块，
+		比如：epoll，poll，select, kqueue,aio （这些模块位于src/event/modules目录中）等等，
+		所以Nginx对事件模块进行 了一层抽象，
+		方便在不同的系统上使用不同的事件模型，
+		也便于扩展新的事件 模型。从此过后，
+		将把注意力主要集中在epoll上。  此处的init回调，
+		其实就是调用了ngx_epoll_init函数。module->actions结构 封装
+		了epoll的所有接口函数。Nginx就是通过actions结构将epoll注
+		册到事件 抽象层中。actions的类型是ngx_event_actions_t，
+		位于src/event/ngx_event.h */
 
         if (module->actions.init(cycle, ngx_timer_resolution) != NGX_OK) {
             /* fatal */
+			
             exit(2);
         }
+
+		/*跳出循环，只可能使用一个具体的事件模型*/
 
         break;
     }
@@ -671,6 +752,7 @@ ngx_event_process_init(ngx_cycle_t *cycle)
 
 #endif
 
+	/*创建一个connection数组，维护所有的connection； 本过程已经是在worker进程中了，所以是每个worker都有自己的 connection数组。 */
     cycle->connections =
         ngx_alloc(sizeof(ngx_connection_t) * cycle->connection_n, cycle->log);
     if (cycle->connections == NULL) {
@@ -679,6 +761,7 @@ ngx_event_process_init(ngx_cycle_t *cycle)
 
     c = cycle->connections;
 
+	/*创建一个读事件数组*/
     cycle->read_events = ngx_alloc(sizeof(ngx_event_t) * cycle->connection_n,
                                    cycle->log);
     if (cycle->read_events == NULL) {
@@ -695,6 +778,7 @@ ngx_event_process_init(ngx_cycle_t *cycle)
 #endif
     }
 
+	/*创建一个写事件数组*/
     cycle->write_events = ngx_alloc(sizeof(ngx_event_t) * cycle->connection_n,
                                     cycle->log);
     if (cycle->write_events == NULL) {
@@ -712,6 +796,9 @@ ngx_event_process_init(ngx_cycle_t *cycle)
 
     i = cycle->connection_n;
     next = NULL;
+	/*初始化整个connection数组，connection数组使用得很是巧妙， 
+	能够快速的获取释放一个连接结构。
+	下一篇画个图来详细看看 这个connection。 */
 
     do {
         i--;
@@ -719,6 +806,7 @@ ngx_event_process_init(ngx_cycle_t *cycle)
         c[i].data = next;
         c[i].read = &cycle->read_events[i];
         c[i].write = &cycle->write_events[i];
+		//-1是什么意思?
         c[i].fd = (ngx_socket_t) -1;
 
         next = &c[i];
@@ -728,14 +816,18 @@ ngx_event_process_init(ngx_cycle_t *cycle)
 #endif
     } while (i);
 
+	/*free_connections指向一个可用的slot*/
     cycle->free_connections = next;
+	/*free_connection_n可用slot的个数*/
     cycle->free_connection_n = cycle->connection_n;
 
     /* for each listening socket */
+	/*为每个监听套接字从connection数组中分配一个连接，即一个slot*/
 
     ls = cycle->listening.elts;
     for (i = 0; i < cycle->listening.nelts; i++) {
 
+		/*从connection中取得一个新的连接slot*/
         c = ngx_get_connection(ls[i].fd, cycle->log);
 
         if (c == NULL) {
@@ -750,7 +842,7 @@ ngx_event_process_init(ngx_cycle_t *cycle)
         rev = c->read;
 
         rev->log = c->log;
-        rev->accept = 1;
+        rev->accept = 1;	/*读事件发生，调用accept*/
 
 #if (NGX_HAVE_DEFERRED_ACCEPT)
         rev->deferred_accept = ls[i].deferred_accept;
@@ -813,8 +905,12 @@ ngx_event_process_init(ngx_cycle_t *cycle)
         }
 
 #else
+		/*注册监听套接口读事件的回调函数ngx_event_accept*/
 
         rev->handler = ngx_event_accept;
+		/*使用了accept_mutex，暂时不将监听套接字放入epoll中 而是等到
+		worker抢到accept互斥体后，再放入epoll，避免 惊群的发生。 */
+
 
         if (ngx_use_accept_mutex) {
             continue;
@@ -826,6 +922,7 @@ ngx_event_process_init(ngx_cycle_t *cycle)
             }
 
         } else {
+        /*没有使用accept互斥体，那么就在此处将监听套接字放入 epoll中。 */
             if (ngx_add_event(rev, NGX_READ_EVENT, 0) == NGX_ERROR) {
                 return NGX_ERROR;
             }
@@ -873,7 +970,10 @@ ngx_send_lowat(ngx_connection_t *c, size_t lowat)
     return NGX_OK;
 }
 
+/*
+在解析配置文件到events指令的时候，将调用此回调函数
 
+*/
 static char *
 ngx_events_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 {
@@ -893,6 +993,7 @@ ngx_events_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 
         ngx_modules[i]->ctx_index = ngx_event_max_module++;
     }
+	/*为每个事件模块分配一个指针，用以保存相应配置结构的地址。*/
 
     ctx = ngx_pcalloc(cf->pool, sizeof(void *));
     if (ctx == NULL) {
@@ -906,6 +1007,7 @@ ngx_events_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 
     *(void **) conf = ctx;
 
+	/* 循环调用每个事件模块的create_conf函数，创建配置结构*/
     for (i = 0; ngx_modules[i]; i++) {
         if (ngx_modules[i]->type != NGX_EVENT_MODULE) {
             continue;
@@ -926,6 +1028,10 @@ ngx_events_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     cf->module_type = NGX_EVENT_MODULE;
     cf->cmd_type = NGX_EVENT_CONF;
 
+	/* 由于events是一个block指令，
+	events域下还可以配置很多其他指令，
+	比如use等，现在开始解析events block中的指令，
+	完成初始化工作。*/
     rv = ngx_conf_parse(cf, NULL);
 
     *cf = pcf;
@@ -933,6 +1039,7 @@ ngx_events_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     if (rv != NGX_CONF_OK)
         return rv;
 
+	/*循环执行每个事件模块的init_conf函数，初始化配置结构*/
     for (i = 0; ngx_modules[i]; i++) {
         if (ngx_modules[i]->type != NGX_EVENT_MODULE) {
             continue;
@@ -941,6 +1048,7 @@ ngx_events_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
         m = ngx_modules[i]->ctx;
 
         if (m->init_conf) {
+			//初始化conf
             rv = m->init_conf(cf->cycle, (*ctx)[ngx_modules[i]->ctx_index]);
             if (rv != NGX_CONF_OK) {
                 return rv;

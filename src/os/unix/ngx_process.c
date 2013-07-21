@@ -31,6 +31,7 @@ char           **ngx_os_argv;
 ngx_int_t        ngx_process_slot;
 ngx_socket_t     ngx_channel;
 ngx_int_t        ngx_last_process;
+//全局数组,存储进程信息
 ngx_process_t    ngx_processes[NGX_MAX_PROCESSES];
 
 

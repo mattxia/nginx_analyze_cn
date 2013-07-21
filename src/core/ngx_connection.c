@@ -702,7 +702,11 @@ ngx_close_listening_sockets(ngx_cycle_t *cycle)
     }
 }
 
+/*
+获取一个connection
+从connections数组中获取一个可用的slot来维护这个连接
 
+*/
 ngx_connection_t *
 ngx_get_connection(ngx_socket_t s, ngx_log_t *log)
 {
@@ -721,6 +725,7 @@ ngx_get_connection(ngx_socket_t s, ngx_log_t *log)
     }
 
     /* ngx_mutex_lock */
+	/*从free_connecionts处就能够直接获得一个可用的slot*/
 
     c = ngx_cycle->free_connections;
 
@@ -739,6 +744,7 @@ ngx_get_connection(ngx_socket_t s, ngx_log_t *log)
         return NULL;
     }
 
+	/*移动free_connections指针到获取的C的下一个可用slot上*/
     ngx_cycle->free_connections = c->data;
     ngx_cycle->free_connection_n--;
 
@@ -778,6 +784,9 @@ ngx_get_connection(ngx_socket_t s, ngx_log_t *log)
 }
 
 
+/*
+释放一个连接,free_connections上多一个slot
+*/
 void
 ngx_free_connection(ngx_connection_t *c)
 {
